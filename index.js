@@ -342,99 +342,189 @@ async function sendPhotoToGroups(groupIds, imageUrl, caption) {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 }
-
-// Функция для отправки медиагруппы (несколько фото в одном сообщении)
-async function sendMediaGroupToGroups(groupIds, imageUrls, caption) {
-    if (!groupIds || groupIds.length === 0) {
-        console.log('❌ Нет групп для отправки медиагруппы');
+async function downloadImageWithRetry(url, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const buffer = await downloadImageBuffer(url);
+            return buffer;
+        } catch (error) {
+            console.warn(`Attempt ${attempt} failed for ${url}:`, error.message);
+            if (attempt === maxRetries) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+    }
+}
+async function sendMultiplePhotos(groupIds, imageUrls, caption) {
+    if (!groupIds || groupIds.length === 0 || !imageUrls || imageUrls.length === 0) {
+        console.log('❌ Нет групп или фото для отправки');
         return;
     }
-    
-    console.log(`📤 Отправка медиагруппы из ${imageUrls.length} фото в ${groupIds.length} групп`);
-    
+
+    console.log(`📤 Отправка ${imageUrls.length} фото в ${groupIds.length} групп`);
+
     for (const groupId of groupIds) {
         try {
-            // Создаем массив для медиагруппы (максимум 10 фото)
-            const mediaGroup = [];
-            const maxPhotos = 10; // Лимит Telegram
-            
-            // Берем первые 10 фото (Telegram ограничивает медиагруппу 10 элементами)
-            const photosToSend = imageUrls.slice(0, maxPhotos);
-            
-            console.log(`🖼️ Формирование медиагруппы из ${photosToSend.length} фото для группы ${groupId}`);
-            
-            // Создаем медиагруппу
-            for (let i = 0; i < photosToSend.length; i++) {
-                const imageUrl = photosToSend[i];
-                
-                try {
-                    // Скачиваем изображение
-                    const imageBuffer = await downloadImageBuffer(imageUrl);
-                    
-                    // Добавляем в медиагруппу
-                    mediaGroup.push({
-                        type: 'photo',
-                        media: imageBuffer,
-                        // Подпись только у первого фото (будет отображаться для всего сообщения)
-                        caption: i === 0 ? caption.substring(0, 1024) : undefined
-                    });
-                    
-                    console.log(`✅ Фото ${i + 1} добавлено в медиагруппу`);
-                    
-                } catch (downloadError) {
-                    console.error(`❌ Ошибка загрузки фото ${i + 1}:`, downloadError.message);
-                    // Пропускаем это фото и продолжаем
-                }
-                
-                // Небольшая задержка между загрузками
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-            
-            if (mediaGroup.length === 0) {
-                throw new Error('Не удалось загрузить ни одного изображения для медиагруппы');
-            }
-            
-            // Отправляем медиагруппу
-            await bot.sendMediaGroup(groupId, mediaGroup);
-            console.log(`✅ Медиагруппа из ${mediaGroup.length} фото отправлена в группу ${groupId}`);
-            
-            // Если было больше 10 фото, отправляем остальные как отдельные фото
-            if (imageUrls.length > maxPhotos) {
-                const remainingPhotos = imageUrls.slice(maxPhotos);
-                console.log(`📨 Отправка оставшихся ${remainingPhotos.length} фото отдельно...`);
-                
-                for (let i = 0; i < remainingPhotos.length; i++) {
+            // Если фото 1-2 - отправляем как отдельные фото с подписью у первого
+            if (imageUrls.length <= 2) {
+                for (let i = 0; i < imageUrls.length; i++) {
+                    await sendSinglePhotoToGroup(groupId, imageUrls[i], i === 0 ? caption : '');
                     await new Promise(resolve => setTimeout(resolve, 500));
-                    try {
-                        await sendSinglePhotoToGroup(groupId, remainingPhotos[i], '');
-                        console.log(`✅ Дополнительное фото ${maxPhotos + i + 1} отправлено`);
-                    } catch (photoError) {
-                        console.error(`❌ Ошибка отправки дополнительного фото ${maxPhotos + i + 1}:`, photoError.message);
-                    }
                 }
             }
+            // Если фото 3-10 - отправляем медиагруппой
+            else if (imageUrls.length <= 10) {
+                await sendMediaGroupToGroups([groupId], imageUrls, caption);
+            }
+            // Если фото больше 10 - разбиваем на части
+            else {
+                console.log(`🔄 Слишком много фото (${imageUrls.length}), разбиваю на части...`);
+                
+                // Разбиваем на группы по 10 фото
+                const chunks = [];
+                for (let i = 0; i < imageUrls.length; i += 10) {
+                    chunks.push(imageUrls.slice(i, i + 10));
+                }
+                
+                // Отправляем первую группу с подписью
+                if (chunks[0].length > 0) {
+                    await sendMediaGroupToGroups([groupId], chunks[0], caption);
+                }
+                
+                // Отправляем остальные группы без подписи
+                for (let i = 1; i < chunks.length; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await sendMediaGroupToGroups([groupId], chunks[i], '');
+                }
+            }
+            
+            console.log(`✅ Все ${imageUrls.length} фото отправлены в группу ${groupId}`);
             
         } catch (error) {
-            console.error(`❌ Ошибка отправки медиагруппы в группу ${groupId}:`, error.message);
+            console.error(`❌ Ошибка отправки фото в группу ${groupId}:`, error.message);
             
-            // Fallback: пытаемся отправить по одному фото
+            // Fallback: пытаемся отправить по одному
             try {
-                console.log(`🔄 Попытка отправить фото по одному в группу ${groupId}...`);
+                console.log(`🔄 Пробую отправить фото по одному в группу ${groupId}...`);
                 await sendAllPhotosSeparately(groupId, imageUrls, caption);
             } catch (fallbackError) {
-                console.error(`❌ Fallback также не сработал для группы ${groupId}:`, fallbackError.message);
+                console.error(`❌ Fallback не сработал для группы ${groupId}:`, fallbackError.message);
                 
                 // Последняя попытка: отправляем только текст
                 try {
                     await sendToGroups([groupId], caption);
                 } catch (textError) {
-                    console.error(`❌ Не удалось отправить даже текст в группу ${groupId}:`, textError.message);
+                    console.error(`❌ Не удалось отправить даже текст:`, textError.message);
                 }
             }
         }
         
         // Задержка между группами
         await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+async function downloadImageBuffer(url) {
+    return new Promise((resolve, reject) => {
+        const protocol = url.startsWith('https') ? require('https') : require('http');
+        
+        const request = protocol.get(url, (response) => {
+            if (response.statusCode !== 200) {
+                reject(new Error(`HTTP ${response.statusCode}`));
+                return;
+            }
+
+            const chunks = [];
+            response.on('data', (chunk) => chunks.push(chunk));
+            response.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                
+                // Проверяем минимальный размер (не пустой файл)
+                if (buffer.length < 100) {
+                    reject(new Error('File too small or empty'));
+                    return;
+                }
+                
+                resolve(buffer);
+            });
+        });
+
+        request.on('error', reject);
+        request.setTimeout(15000, () => {
+            request.destroy();
+            reject(new Error('Download timeout'));
+        });
+    });
+}
+async function sendPhotosIndividually(groupId, imageUrls, caption) {
+    if (!imageUrls || imageUrls.length === 0) return;
+    
+    // Первое фото с подписью
+    if (imageUrls[0]) {
+        await sendPhotoToGroups([groupId], imageUrls[0], caption);
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    // Остальные фото без подписи
+    for (let i = 1; i < imageUrls.length; i++) {
+        try {
+            await sendPhotoToGroups([groupId], imageUrls[i], '');
+            await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+            console.error(`Failed to send photo ${i} to ${groupId}:`, error.message);
+            // Продолжаем отправлять остальные фото
+        }
+    }
+}
+// Функция для отправки медиагруппы (несколько фото в одном сообщении)
+async function sendMediaGroupToGroups(groupIds, imageUrls, caption) {
+    if (!groupIds || groupIds.length === 0) return;
+    
+    for (const groupId of groupIds) {
+        try {
+            // Проверяем лимит Telegram
+            if (imageUrls.length > 10) {
+                console.log(`⚠️ Too many photos (${imageUrls.length}), splitting...`);
+                await sendMultiplePhotos(groupId, imageUrls, caption);
+                continue;
+            }
+
+            const mediaGroup = [];
+            
+            for (let i = 0; i < imageUrls.length; i++) {
+                try {
+                    const buffer = await downloadImageWithRetry(imageUrls[i]);
+                    mediaGroup.push({
+                        type: 'photo',
+                        media: buffer,
+                        caption: i === 0 ? caption?.substring(0, 1024) : undefined
+                    });
+                } catch (imgError) {
+                    console.error(`Failed to download image ${i}:`, imgError);
+                    // Пропускаем проблемное фото, но продолжаем
+                }
+            }
+
+            if (mediaGroup.length > 0) {
+                await bot.sendMediaGroup(groupId, mediaGroup);
+                console.log(`✅ Media group sent to ${groupId} (${mediaGroup.length} photos)`);
+            } else {
+                // Если ни одно фото не загрузилось, отправляем текст
+                await sendToGroups([groupId], caption || 'Фото объекта');
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+        } catch (error) {
+            console.error(`❌ Error sending media group to ${groupId}:`, error.message);
+            
+            // Fallback: отправляем фото по одному
+            try {
+                console.log('🔄 Trying fallback: sending photos individually...');
+                await sendPhotosIndividually(groupId, imageUrls, caption);
+            } catch (fallbackError) {
+                console.error(`❌ Fallback also failed for ${groupId}:`, fallbackError.message);
+                await sendToGroups([groupId], caption || 'Не удалось отправить фото');
+            }
+        }
     }
 }
 
@@ -480,18 +570,27 @@ function downloadImageBuffer(url) {
 
 // Функция для отправки всех фото по отдельности (fallback)
 async function sendAllPhotosSeparately(groupId, imageUrls, caption) {
-    if (imageUrls.length === 0) {
+    if (!imageUrls || imageUrls.length === 0) {
         await sendToGroups([groupId], caption);
         return;
     }
     
+    console.log(`📨 Отправка ${imageUrls.length} фото по отдельности в группу ${groupId}`);
+    
     // Первое фото с подписью
-    await sendSinglePhotoToGroup(groupId, imageUrls[0], caption);
+    if (imageUrls[0]) {
+        await sendSinglePhotoToGroup(groupId, imageUrls[0], caption);
+    }
     
     // Остальные фото без подписи
     for (let i = 1; i < imageUrls.length; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        await sendSinglePhotoToGroup(groupId, imageUrls[i], '');
+        try {
+            await sendSinglePhotoToGroup(groupId, imageUrls[i], '');
+            console.log(`✅ Фото ${i + 1}/${imageUrls.length} отправлено`);
+        } catch (error) {
+            console.error(`❌ Ошибка отправки фото ${i + 1}:`, error.message);
+        }
     }
 }
 
@@ -531,11 +630,17 @@ async function executeAddProperty(chatId, propertyData) {
             const message = formatPropertyMessage(propertyData);
             const allGroups = [...new Set([...PROPERTY_GROUPS, ...ALL_GROUPS])];
             
-            if (propertyData.images && propertyData.images.length > 0) {
-                await sendPhotoToGroups(allGroups, propertyData.images[0], message);
-            } else {
-                await sendToGroups(allGroups, message);
-            }
+     const allImages = [
+    ...(propertyData.images || []),
+    ...(propertyData.assets_array || [])
+];
+
+if (allImages.length > 0) {
+    console.log(`🖼️ Отправка ${allImages.length} фото в группы`);
+    await sendMultiplePhotos(allGroups, allImages, message);
+} else {
+    await sendToGroups(allGroups, message);
+}
             
             console.log(`✅ Объект добавлен и отправлен в ${allGroups.length} групп`);
         } else {
