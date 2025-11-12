@@ -2337,6 +2337,37 @@ function splitLongMessage(message, maxLength = 4096) {
     return parts;
 }
 
+// ✅ РАБОТАЮЩИЕ КОМАНДЫ ДЛЯ ДИАГНОСТИКИ
+
+// Проверка подключения к API
+bot.onText(/\/test_api/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/debug-config`);
+        
+        await bot.sendMessage(chatId, 
+            `✅ API подключено успешно!\n\n` +
+            `Supabase URL: ${response.supabase_url}\n` +
+            `Service Key: ${response.supabase_service_key}\n` +
+            `App Env: ${response.app_env}`
+        );
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка подключения к API:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.response?.status}\n` +
+            `URL: ${STATAMIC_API_URL}/debug-config`
+        );
+    }
+});
+
+// Проверка Supabase
 bot.onText(/\/test_supabase/, async (msg) => {
     const chatId = msg.chat.id;
     
@@ -2345,44 +2376,27 @@ bot.onText(/\/test_supabase/, async (msg) => {
     }
     
     try {
-        const testData = {
-            title: 'Тест Supabase',
-            type: 'rent',
-            price: '1000',
-            address: 'Тестовый адрес',
-            district: 'Constanta',
-            floor: '2',
-            rooms: '3',
-            has_lift: true,
-            has_balcony: true,
-            bathroom: '2',
-            type_home: 'квартира',
-            apartment_area: '75',
-            nearbu: "test",
-            date_use:"0",
-            description:"test"
-        };
-        
-        const response = await makeStatamicRequest('POST', STATAMIC_API_URL, testData);
+        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/supabase-test`);
         
         await bot.sendMessage(chatId, 
-            `✅ Supabase тест успешен!\n\n` +
-            `ID: ${response.id}\n` +
-            `Изображения: ${response.images_uploaded}\n` +
-            `Ассеты: ${response.assets_uploaded}`
+            `✅ Supabase подключен!\n\n` +
+            `Статус: ${response.status}\n` +
+            `Подключение: ${response.supabase_connected ? '✅' : '❌'}\n` +
+            `Бакет: ${response.bucket_exists ? '✅' : '❌'}\n` +
+            `Файлов: ${response.files_count}`
         );
         
     } catch (error) {
         await bot.sendMessage(chatId, 
-            `❌ Ошибка Supabase:\n\n` +
+            `❌ Ошибка подключения к Supabase:\n\n` +
             `Ошибка: ${error.message}\n` +
             `Статус: ${error.response?.status}`
         );
     }
 });
 
-// Проверка хранилища
-bot.onText(/\/check_storage/, async (msg) => {
+// Проверка загрузки изображений
+bot.onText(/\/test_upload/, async (msg) => {
     const chatId = msg.chat.id;
     
     if (!isAdmin(chatId)) {
@@ -2390,17 +2404,22 @@ bot.onText(/\/check_storage/, async (msg) => {
     }
     
     try {
-        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/storage-info`);
+        const testImageUrl = 'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Upload';
+        const response = await makeStatamicRequest('POST', `${STATAMIC_API_URL}/test-upload`, {
+            image_url: testImageUrl
+        });
         
-        await bot.sendMessage(chatId, 
-            `📦 Информация о хранилище:\n\n` +
-            `Тип: ${response.storage_type}\n` +
-            `Бакет: ${response.bucket}\n` +
-            `Файлов: ${response.file_count}`
-        );
+        if (response.success) {
+            await bot.sendMessage(chatId, 
+                `✅ Тест загрузки успешен!\n\n` +
+                `URL: ${response.url}`
+            );
+        } else {
+            await bot.sendMessage(chatId, `❌ Ошибка загрузки: ${response.message}`);
+        }
         
     } catch (error) {
-        await bot.sendMessage(chatId, '❌ Не удалось получить информацию о хранилище');
+        await bot.sendMessage(chatId, `❌ Ошибка теста загрузки: ${error.message}`);
     }
 });
 
