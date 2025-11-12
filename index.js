@@ -2357,7 +2357,10 @@ bot.onText(/\/test_supabase/, async (msg) => {
             has_balcony: true,
             bathroom: '2',
             type_home: 'квартира',
-            apartment_area: '75'
+            apartment_area: '75',
+            nearbu: "test",
+            date_use:"0",
+            description:"test"
         };
         
         const response = await makeStatamicRequest('POST', STATAMIC_API_URL, testData);
