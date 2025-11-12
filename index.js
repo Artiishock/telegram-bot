@@ -597,6 +597,8 @@ async function sendAllPhotosSeparately(groupId, imageUrls, caption) {
 async function executeAddProperty(chatId, propertyData) {
     try {
         console.log('🏠 Данные объекта для отправки в Statamic:', propertyData);
+        console.log('📸 Images array:', propertyData.images);
+        console.log('🖼️ Assets array:', propertyData.assets_array);
         
         // Формируем данные для API
         const apiData = {
@@ -619,9 +621,21 @@ async function executeAddProperty(chatId, propertyData) {
             assets_array: propertyData.assets_array || []
         };
 
-        console.log('📤 Отправка данных на API:', apiData);
+        console.log('📤 Отправка данных на API:', {
+            title: apiData.title,
+            images_count: apiData.images.length,
+            assets_count: apiData.assets_array.length,
+            images_sample: apiData.images.slice(0, 2) // первые 2 URL для проверки
+        });
         
         const response = await makeStatamicRequest('POST', STATAMIC_API_URL, apiData);
+        
+        // ДОБАВЬТЕ ЭТОТ ЛОГ
+        console.log('📨 Ответ от Statamic:', {
+            success: response.success,
+            message: response.message,
+            entry_id: response.entry_id || 'не указан'
+        });
         
         if (response.success) {
             await bot.sendMessage(chatId, '✅ Объект недвижимости успешно добавлен!');
@@ -643,15 +657,15 @@ if (allImages.length > 0) {
 }
             
             console.log(`✅ Объект добавлен и отправлен в ${allGroups.length} групп`);
-        } else {
+       } else {
             await bot.sendMessage(chatId, '❌ Произошла ошибка при добавлении объекта: ' + response.message);
         }
     } catch (error) {
         console.error('❌ Ошибка при добавлении объекта:', error);
+        console.error('❌ Детали ошибки:', error.response?.data || error.message);
         await bot.sendMessage(chatId, '❌ Ошибка при добавлении объекта. Проверьте логи для подробностей.');
     }
 }
-
 async function makeStatamicRequest(method, url, data = null) {
     try {
         const config = {
@@ -1986,28 +2000,28 @@ function formatPropertyMessage(propertyData) {
         message += `\n📋 Описание: ${shortDesc}\n`;
     }
     
-        message += `📩Контакты:`;
-    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare `;
-    message += `📞 +380682656442 - Сергей`;
+        message += `📩Контакты:\n`;
+    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare \n`;
+    message += `📞 +380682656442 - Сергей\n`;
     message += `🌐Наш сайт c квартирами 
                 для аренды, покупки, юридической консультации - 
                 жми на ссылку: 
-                https://armonie-imobiliare.ro `;
-    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:`
-    message += `✅Instagram:
-                https://instagram.com/apartment_romania_mamaia`;
-    message += `✅Facebook:
-                https://www.facebook.com/housingromania`
-    message += `✅Tik Tok:
-                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1`;
-    message += `✅Youtube:
-                https://www.youtube.com/@Armonie-Romania`;
-    message += `НАШИ КАНАЛЫ:`
-    message += `✅Продажа: https://t.me/harmony_invest`;
-    message += `✅Юридическая консультация:`
-    message += `Гражданство ЕС: https://t.me/armonie_consulting`;
-    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting`;
-    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting`;
+                https://armonie-imobiliare.ro \n`;
+    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:\n`
+    message += `✅Instagram:\n
+                https://instagram.com/apartment_romania_mamaia\n`;
+    message += `✅Facebook:\n
+                https://www.facebook.com/housingromania\n`
+    message += `✅Tik Tok:\n
+                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1\n`;
+    message += `✅Youtube:\n
+                https://www.youtube.com/@Armonie-Romania\n`;
+    message += `НАШИ КАНАЛЫ:\n`
+    message += `✅Продажа: https://t.me/harmony_invest\n`;
+    message += `✅Юридическая консультация:\n`
+    message += `Гражданство ЕС: https://t.me/armonie_consulting\n`;
+    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting\n`;
+    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting\n`;
     
     return message;
 }
@@ -2023,28 +2037,29 @@ function formatNewsMessage(newsData) {
         : newsData.blog_text;
     
     message += `📖 ${shortText}\n\n`;
-        message += `📩Контакты:`;
-    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare `;
-    message += `📞 +380682656442 - Сергей`;
+        message += `📩Контакты:\n`;
+    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare \n`;
+    message += `📞 +380682656442 - Сергей\n`;
     message += `🌐Наш сайт c квартирами 
                 для аренды, покупки, юридической консультации - 
                 жми на ссылку: 
-                https://armonie-imobiliare.ro `;
-    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:`
-    message += `✅Instagram:
-                https://instagram.com/apartment_romania_mamaia`;
-    message += `✅Facebook:
-                https://www.facebook.com/housingromania`
-    message += `✅Tik Tok:
-                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1`;
-    message += `✅Youtube:
-                https://www.youtube.com/@Armonie-Romania`;
-    message += `НАШИ КАНАЛЫ:`
-    message += `✅Продажа: https://t.me/harmony_invest`;
-    message += `✅Юридическая консультация:`
-    message += `Гражданство ЕС: https://t.me/armonie_consulting`;
-    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting`;
-    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting`;
+                https://armonie-imobiliare.ro \n`;
+    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:\n`
+    message += `✅Instagram:\n
+                https://instagram.com/apartment_romania_mamaia\n`;
+    message += `✅Facebook:\n
+                https://www.facebook.com/housingromania\n`
+    message += `✅Tik Tok:\n
+                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1\n`;
+    message += `✅Youtube:\n
+                https://www.youtube.com/@Armonie-Romania\n`;
+    message += `НАШИ КАНАЛЫ:\n`
+    message += `✅Продажа: https://t.me/harmony_invest\n`;
+    message += `✅Юридическая консультация:\n`
+    message += `Гражданство ЕС: https://t.me/armonie_consulting\n`;
+    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting\n`;
+    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting\n`;
+    
     
     return message;
 }
@@ -2321,6 +2336,72 @@ function splitLongMessage(message, maxLength = 4096) {
     
     return parts;
 }
+
+bot.onText(/\/test_supabase/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const testData = {
+            title: 'Тест Supabase',
+            type: 'rent',
+            price: '1000',
+            address: 'Тестовый адрес',
+            district: 'Constanta',
+            floor: '2',
+            rooms: '3',
+            has_lift: true,
+            has_balcony: true,
+            bathroom: '2',
+            type_home: 'квартира',
+            apartment_area: '75'
+        };
+        
+        const response = await makeStatamicRequest('POST', STATAMIC_API_URL, testData);
+        
+        await bot.sendMessage(chatId, 
+            `✅ Supabase тест успешен!\n\n` +
+            `ID: ${response.id}\n` +
+            `Изображения: ${response.images_uploaded}\n` +
+            `Ассеты: ${response.assets_uploaded}`
+        );
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка Supabase:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.response?.status}`
+        );
+    }
+});
+
+// Проверка хранилища
+bot.onText(/\/check_storage/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/storage-info`);
+        
+        await bot.sendMessage(chatId, 
+            `📦 Информация о хранилище:\n\n` +
+            `Тип: ${response.storage_type}\n` +
+            `Бакет: ${response.bucket}\n` +
+            `Файлов: ${response.file_count}`
+        );
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, '❌ Не удалось получить информацию о хранилище');
+    }
+});
+
+
 
 // ==================== ЗАПУСК СЕРВЕРА ====================
 
