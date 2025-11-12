@@ -2367,6 +2367,37 @@ bot.onText(/\/test_api/, async (msg) => {
     }
 });
 
+/// Проверка базового API
+bot.onText(/\/test_api/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        // Используем правильный URL - убираем /telegram-property из пути
+        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/debug-config';
+        const response = await makeStatamicRequest('GET', apiUrl);
+        
+        await bot.sendMessage(chatId, 
+            `✅ API подключено успешно!\n\n` +
+            `Supabase URL: ${response.supabase_url}\n` +
+            `Service Key: ${response.supabase_service_key}\n` +
+            `App Env: ${response.app_env}\n` +
+            `App Debug: ${response.app_debug}`
+        );
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка подключения к API:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.response?.status}\n` +
+            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/debug-config`
+        );
+    }
+});
+
 // Проверка Supabase
 bot.onText(/\/test_supabase/, async (msg) => {
     const chatId = msg.chat.id;
@@ -2376,7 +2407,9 @@ bot.onText(/\/test_supabase/, async (msg) => {
     }
     
     try {
-        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/supabase-test`);
+        // Используем правильный URL
+        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/supabase-test';
+        const response = await makeStatamicRequest('GET', apiUrl);
         
         await bot.sendMessage(chatId, 
             `✅ Supabase подключен!\n\n` +
@@ -2390,7 +2423,8 @@ bot.onText(/\/test_supabase/, async (msg) => {
         await bot.sendMessage(chatId, 
             `❌ Ошибка подключения к Supabase:\n\n` +
             `Ошибка: ${error.message}\n` +
-            `Статус: ${error.response?.status}`
+            `Статус: ${error.response?.status}\n` +
+            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/supabase-test`
         );
     }
 });
@@ -2405,25 +2439,31 @@ bot.onText(/\/test_upload/, async (msg) => {
     
     try {
         const testImageUrl = 'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Upload';
-        const response = await makeStatamicRequest('POST', `${STATAMIC_API_URL}/test-upload`, {
+        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/test-upload';
+        
+        const response = await makeStatamicRequest('POST', apiUrl, {
             image_url: testImageUrl
         });
         
         if (response.success) {
             await bot.sendMessage(chatId, 
                 `✅ Тест загрузки успешен!\n\n` +
-                `URL: ${response.url}`
+                `URL: ${response.url}\n` +
+                `File: ${response.file_name}`
             );
         } else {
             await bot.sendMessage(chatId, `❌ Ошибка загрузки: ${response.message}`);
         }
         
     } catch (error) {
-        await bot.sendMessage(chatId, `❌ Ошибка теста загрузки: ${error.message}`);
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка теста загрузки:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.response?.status}\n` +
+            `Детали: ${error.response?.data?.message || 'Нет дополнительной информации'}`
+        );
     }
 });
-
-
 
 // ==================== ЗАПУСК СЕРВЕРА ====================
 
