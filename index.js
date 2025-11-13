@@ -693,48 +693,36 @@ async function makeStatamicRequest(method, url, data = null) {
     try {
         console.log('📡 Отправка запроса:', { method, url, data: data ? 'present' : 'null' });
 
-        const config = {
+           const config = {
             method: method,
             url: url,
             headers: {
                 'Authorization': `Bearer ${API_TOKEN}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'User-Agent': 'TelegramBot/1.0'
+                'X-Requested-With': 'XMLHttpRequest'
             },
-            timeout: 30000, // 30 секунд таймаут
-            validateStatus: function (status) {
-                return status >= 200 && status < 500; // Разрешаем статусы 200-499
-            }
+            timeout: 30000,
         };
+
 
         if (data && (method === 'POST' || method === 'PUT')) {
             config.data = data;
         }
 
         const response = await axios(config);
-        
-        console.log('✅ Ответ от сервера:', {
-            status: response.status,
-            data: response.data
-        });
-
-        return response.data;
+                return response.data;
 
     } catch (error) {
-        console.error('❌ Критическая ошибка запроса:', {
+        console.error('❌ Ошибка запроса:', {
             message: error.message,
-            code: error.code,
-            url: url
+            status: error.response?.status,
+            data: error.response?.data
         });
-
-        // Создаем структурированную ошибку
-        const structuredError = new Error(error.message || 'Request failed');
-        structuredError.status = error.response?.status;
-        structuredError.data = error.response?.data;
-        throw structuredError;
+        throw error;
     }
 }
+
 // Функция для отправки всех фотографий в группы
 async function sendAllPhotosToGroups(groupIds, imageUrls, caption) {
     if (!groupIds || groupIds.length === 0) {
@@ -2347,7 +2335,8 @@ bot.onText(/\/test_api/, async (msg) => {
 });
 
 // Проверка Supabase
-bot.onText(/\/test_supabase/, async (msg) => {
+// Улучшенная проверка Supabase
+bot.onText(/\/check_supabase/, async (msg) => {
     const chatId = msg.chat.id;
     
     if (!isAdmin(chatId)) {
@@ -2355,29 +2344,68 @@ bot.onText(/\/test_supabase/, async (msg) => {
     }
     
     try {
-        console.log(`🧪 Запуск test_supabase для chatId: ${chatId}`);
-        
         const apiUrl = 'https://armonie.onrender.com/api/supabase-test';
         const response = await makeStatamicRequest('GET', apiUrl);
         
-        const message = `✅ Supabase подключен!\n\n` +
-                       `Статус: ${response.status}\n` +
-                       `Подключение: ${response.supabase_connected ? '✅' : '❌'}\n` +
-                       `Бакет: ${response.bucket_exists ? '✅' : '❌'}\n` +
-                       `Файлов: ${response.files_count}`;
+        let bucketStatus = '❌ Не существует';
+        if (response.bucket_exists) {
+            bucketStatus = '✅ Существует';
+        } else if (response.files_count > 0) {
+            bucketStatus = '⚠️ Файлы есть, но статус бакета неизвестен';
+        }
         
-        console.log(`📨 Отправка ответа: ${message}`);
-        await bot.sendMessage(chatId, message);
+        await bot.sendMessage(chatId, 
+            `🔍 Детальная проверка Supabase:\n\n` +
+            `Статус: ${response.status}\n` +
+            `Подключение: ${response.supabase_connected ? '✅' : '❌'}\n` +
+            `Бакет "properties": ${bucketStatus}\n` +
+            `Файлов в бакете: ${response.files_count}\n` +
+            `URL: ${response.supabase_url || 'не указан'}`
+        );
         
     } catch (error) {
-        console.error(`❌ Ошибка в test_supabase:`, error);
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка проверки Supabase:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.status || 'unknown'}`
+        );
+    }
+});
+
+// Упрощенный тест загрузки
+bot.onText(/\/simple_upload/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const apiUrl = 'https://armonie.onrender.com/api/test-upload';
         
-        const errorMessage = `❌ Ошибка подключения к Supabase:\n\n` +
-                            `Ошибка: ${error.message}\n` +
-                            `Статус: ${error.status || 'unknown'}\n` +
-                            `URL: https://armonie.onrender.com/api/supabase-test`;
+        // Отправляем запрос без внешних URL - сервер сам сгенерирует изображение
+        const response = await makeStatamicRequest('POST', apiUrl, {
+            test: 'internal'
+        });
         
-        await bot.sendMessage(chatId, errorMessage);
+        if (response.success) {
+            await bot.sendMessage(chatId, 
+                `✅ Упрощенный тест загрузки успешен!\n\n` +
+                `Метод: ${response.method}\n` +
+                `Файл: ${response.file_name}\n` +
+                `URL: ${response.url}`
+            );
+        } else {
+            await bot.sendMessage(chatId, `❌ Ошибка: ${response.message}`);
+        }
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка упрощенного теста:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.status || 'unknown'}\n` +
+            `Детали: ${error.data?.message || 'Нет дополнительной информации'}`
+        );
     }
 });
 
