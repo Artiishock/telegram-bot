@@ -1,3 +1,10 @@
+
+
+const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
+const express = require('express');
+require('dotenv').config();
+
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Необработанное отклонение промиса:', reason);
 });
@@ -14,12 +21,6 @@ bot.on('polling_error', (error) => {
 bot.on('webhook_error', (error) => {
     console.error('❌ Ошибка webhook бота:', error);
 });
-
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
-const express = require('express');
-require('dotenv').config();
-
 // Конфигурация
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const STATAMIC_API_URL = process.env.STATAMIC_API_URL;
