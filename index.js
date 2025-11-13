@@ -2515,6 +2515,101 @@ bot.onText(/\/bot_status/, async (msg) => {
         await bot.sendMessage(chatId, `❌ Ошибка получения статуса: ${error.message}`);
     }
 });
+// Простая проверка здоровья API
+bot.onText(/\/health/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const apiUrl = 'https://armonie.onrender.com/api/health-check';
+        const response = await makeStatamicRequest('GET', apiUrl);
+        
+        await bot.sendMessage(chatId, 
+            `✅ Health Check:\n\n` +
+            `Статус: ${response.status}\n` +
+            `Сообщение: ${response.message}\n` +
+            `Supabase: ${response.supabase_configured ? '✅' : '❌'}\n` +
+            `Statamic: ${response.statamic_working ? '✅' : '❌'}`
+        );
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Health Check failed:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.status || 'unknown'}`
+        );
+    }
+});
+
+// Простой тест создания объекта
+bot.onText(/\/test_create/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const apiUrl = 'https://armonie.onrender.com/api/test-create-property';
+        const response = await makeStatamicRequest('POST', apiUrl, {
+            title: 'Тест из бота ' + new Date().toLocaleTimeString()
+        });
+        
+        if (response.success) {
+            await bot.sendMessage(chatId, 
+                `✅ Тестовый объект создан!\n\n` +
+                `ID: ${response.entry_id}\n` +
+                `Сообщение: ${response.message}`
+            );
+        } else {
+            await bot.sendMessage(chatId, `❌ Ошибка: ${response.message}`);
+        }
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка тестового создания:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.status || 'unknown'}`
+        );
+    }
+});
+
+// Простой тест загрузки
+bot.onText(/\/simple_test/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const apiUrl = 'https://armonie.onrender.com/api/simple-test-upload';
+        const response = await makeStatamicRequest('POST', apiUrl, {
+            test: 'simple',
+            timestamp: new Date().toISOString()
+        });
+        
+        if (response.success) {
+            await bot.sendMessage(chatId, 
+                `✅ Простой тест пройден!\n\n` +
+                `Сообщение: ${response.message}\n` +
+                `Тест: ${response.test}`
+            );
+        } else {
+            await bot.sendMessage(chatId, `❌ Ошибка: ${response.message}`);
+        }
+        
+    } catch (error) {
+        await bot.sendMessage(chatId, 
+            `❌ Ошибка простого теста:\n\n` +
+            `Ошибка: ${error.message}\n` +
+            `Статус: ${error.status || 'unknown'}`
+        );
+    }
+});
 // ==================== ЗАПУСК СЕРВЕРА ====================
 
 app.use(express.json());
