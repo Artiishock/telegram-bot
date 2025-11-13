@@ -2392,17 +2392,35 @@ bot.onText(/\/test_upload/, async (msg) => {
     try {
         console.log(`🧪 Запуск test_upload для chatId: ${chatId}`);
         
-        const testImageUrl = 'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Upload';
+        // Используем разные тестовые URL
+        const testImageUrls = [
+            'https://picsum.photos/600/400', // Альтернативный сервис
+            'https://armonie.onrender.com/api/test-image' // Наш собственный endpoint
+        ];
+        
         const apiUrl = 'https://armonie.onrender.com/api/test-upload';
         
-        const response = await makeStatamicRequest('POST', apiUrl, {
-            image_url: testImageUrl
-        });
+        // Пробуем первый URL
+        let response;
+        let usedUrl = testImageUrls[0];
+        
+        try {
+            response = await makeStatamicRequest('POST', apiUrl, {
+                image_url: testImageUrls[0]
+            });
+        } catch (firstError) {
+            console.log('🔄 Первый URL не сработал, пробуем второй...');
+            usedUrl = testImageUrls[1];
+            response = await makeStatamicRequest('POST', apiUrl, {
+                image_url: testImageUrls[1]
+            });
+        }
         
         if (response.success) {
             const message = `✅ Тест загрузки успешен!\n\n` +
                            `URL: ${response.url}\n` +
-                           `File: ${response.file_name}`;
+                           `File: ${response.file_name}\n` +
+                           `Source: ${usedUrl}`;
             
             console.log(`📨 Отправка ответа: ${message}`);
             await bot.sendMessage(chatId, message);
@@ -2521,7 +2539,7 @@ bot.onText(/\/test_photo_download/, async (msg) => {
     try {
         // Тестовые URL с разными типами изображений
         const testUrls = [
-            'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Photo+1',
+            
             'https://picsum.photos/600/400',
             'https://httpbin.org/image/jpeg'
         ];
