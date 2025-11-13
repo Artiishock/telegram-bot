@@ -29,8 +29,8 @@ const PORT = process.env.PORT || 3000;
 
 // Инициализация бота
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
-    polling: true,
-     filepath: false 
+    polling: true
+
  });
 const app = express();
 
