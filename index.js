@@ -5,22 +5,7 @@ const axios = require('axios');
 const express = require('express');
 require('dotenv').config();
 
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Необработанное отклонение промиса:', reason);
-});
 
-process.on('uncaughtException', (error) => {
-    console.error('❌ Неперехваченное исключение:', error);
-});
-
-// Обработчик для самого бота
-bot.on('polling_error', (error) => {
-    console.error('❌ Ошибка polling бота:', error);
-});
-
-bot.on('webhook_error', (error) => {
-    console.error('❌ Ошибка webhook бота:', error);
-});
 // Конфигурация
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const STATAMIC_API_URL = process.env.STATAMIC_API_URL;
@@ -55,6 +40,23 @@ const app = express();
 // Временное хранилище данных пользователей
 const userStates = new Map();
 const pendingConfirmations = new Map();
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанное отклонение промиса:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ Неперехваченное исключение:', error);
+});
+
+// Обработчик для самого бота
+bot.on('polling_error', (error) => {
+    console.error('❌ Ошибка polling бота:', error);
+});
+
+bot.on('webhook_error', (error) => {
+    console.error('❌ Ошибка webhook бота:', error);
+});
 
 function escapeMarkdown(text) {
     if (!text) return '';
