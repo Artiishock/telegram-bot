@@ -1,3 +1,20 @@
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Необработанное отклонение промиса:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ Неперехваченное исключение:', error);
+});
+
+// Обработчик для самого бота
+bot.on('polling_error', (error) => {
+    console.error('❌ Ошибка polling бота:', error);
+});
+
+bot.on('webhook_error', (error) => {
+    console.error('❌ Ошибка webhook бота:', error);
+});
+
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const express = require('express');
@@ -671,37 +688,48 @@ if (allImages.length > 0) {
 }
 async function makeStatamicRequest(method, url, data = null) {
     try {
+        console.log('📡 Отправка запроса:', { method, url, data: data ? 'present' : 'null' });
+
         const config = {
             method: method,
             url: url,
             headers: {
                 'Authorization': `Bearer ${API_TOKEN}`,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'User-Agent': 'TelegramBot/1.0'
+            },
+            timeout: 30000, // 30 секунд таймаут
+            validateStatus: function (status) {
+                return status >= 200 && status < 500; // Разрешаем статусы 200-499
             }
         };
 
-        if (data) {
+        if (data && (method === 'POST' || method === 'PUT')) {
             config.data = data;
         }
 
-        console.log('📡 Отправка запроса к Statamic:', {
-            url: url,
-            method: method,
-            data: data ? Object.keys(data) : 'no data'
+        const response = await axios(config);
+        
+        console.log('✅ Ответ от сервера:', {
+            status: response.status,
+            data: response.data
         });
 
-        const response = await axios(config);
-        console.log('✅ Успешный ответ от Statamic:', response.data);
         return response.data;
+
     } catch (error) {
-        console.error('❌ Ошибка запроса к Statamic:', {
+        console.error('❌ Критическая ошибка запроса:', {
             message: error.message,
-            status: error.response?.status,
-            data: error.response?.data,
+            code: error.code,
             url: url
         });
-        throw error;
+
+        // Создаем структурированную ошибку
+        const structuredError = new Error(error.message || 'Request failed');
+        structuredError.status = error.response?.status;
+        structuredError.data = error.response?.data;
+        throw structuredError;
     }
 }
 // Функция для отправки всех фотографий в группы
@@ -1642,73 +1670,11 @@ bot.onText(/\/done/, async (msg) => {
 
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-async function makeStatamicRequest(method, url, data = null) {
-    try {
-        const config = {
-            method: method,
-            url: url,
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`,
-                'Content-Type': 'application/json'
-            }
-        };
 
-        if (data) {
-            config.data = data;
-        }
-
-        const response = await axios(config);
-        return response.data;
-    } catch (error) {
-        console.error('❌ Ошибка запроса к Statamic:', error.response?.data || error.message);
-        throw error;
-    }
-}
 
 // ==================== ФУНКЦИИ ДОБАВЛЕНИЯ ОБЪЕКТОВ ====================
 
-async function makeStatamicRequest(method, url, data = null) {
-    try {
-        const config = {
-            method: method,
-            url: url,
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`, // ⬅️ Убедитесь в формате
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            // Добавляем withCredentials для передачи cookies если нужно
-            // withCredentials: false
-        };
-                console.log('🔐 Отправка запроса с токеном:', {
-            url: url,
-            token_length: API_TOKEN ? API_TOKEN.length : 0,
-            token_prefix: API_TOKEN ? API_TOKEN.substring(0, 10) + '...' : 'none'
-        });
 
-        if (data) {
-            config.data = data;
-        }
-
-        console.log('📡 Отправка запроса к Statamic:', {
-            url: url,
-            method: method,
-            data: data ? Object.keys(data) : 'no data'
-        });
-
-        const response = await axios(config);
-        console.log('✅ Успешный ответ от Statamic:', response.data);
-        return response.data;
-    } catch (error) {
-        console.error('❌ Ошибка запроса к Statamic:', {
-            message: error.message,
-            status: error.response?.status,
-            data: error.response?.data,
-            url: url
-        });
-        throw error;
-    }
-}
 
 function showTypeStep(chatId) {
     const options = {
@@ -2351,25 +2317,29 @@ bot.onText(/\/test_api/, async (msg) => {
     }
     
     try {
-        // Используем правильный URL - убираем /telegram-property из пути
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/debug-config';
+        console.log(`🧪 Запуск test_api для chatId: ${chatId}`);
+        
+        const apiUrl = 'https://armonie.onrender.com/api/debug-config';
         const response = await makeStatamicRequest('GET', apiUrl);
         
-        await bot.sendMessage(chatId, 
-            `✅ API подключено успешно!\n\n` +
-            `Supabase URL: ${response.supabase_url}\n` +
-            `Service Key: ${response.supabase_service_key}\n` +
-            `App Env: ${response.app_env}\n` +
-            `App Debug: ${response.app_debug}`
-        );
+        const message = `✅ API подключено успешно!\n\n` +
+                       `Supabase URL: ${response.supabase_url}\n` +
+                       `Service Key: ${response.supabase_service_key}\n` +
+                       `App Env: ${response.app_env}\n` +
+                       `App Debug: ${response.app_debug}`;
+        
+        console.log(`📨 Отправка ответа: ${message}`);
+        await bot.sendMessage(chatId, message);
         
     } catch (error) {
-        await bot.sendMessage(chatId, 
-            `❌ Ошибка подключения к API:\n\n` +
-            `Ошибка: ${error.message}\n` +
-            `Статус: ${error.response?.status}\n` +
-            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/debug-config`
-        );
+        console.error(`❌ Ошибка в test_api:`, error);
+        
+        const errorMessage = `❌ Ошибка подключения к API:\n\n` +
+                            `Ошибка: ${error.message}\n` +
+                            `Статус: ${error.status || 'unknown'}\n` +
+                            `URL: https://armonie.onrender.com/api/debug-config`;
+        
+        await bot.sendMessage(chatId, errorMessage);
     }
 });
 
@@ -2382,25 +2352,29 @@ bot.onText(/\/test_supabase/, async (msg) => {
     }
     
     try {
-        // Используем правильный URL
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/supabase-test';
+        console.log(`🧪 Запуск test_supabase для chatId: ${chatId}`);
+        
+        const apiUrl = 'https://armonie.onrender.com/api/supabase-test';
         const response = await makeStatamicRequest('GET', apiUrl);
         
-        await bot.sendMessage(chatId, 
-            `✅ Supabase подключен!\n\n` +
-            `Статус: ${response.status}\n` +
-            `Подключение: ${response.supabase_connected ? '✅' : '❌'}\n` +
-            `Бакет: ${response.bucket_exists ? '✅' : '❌'}\n` +
-            `Файлов: ${response.files_count}`
-        );
+        const message = `✅ Supabase подключен!\n\n` +
+                       `Статус: ${response.status}\n` +
+                       `Подключение: ${response.supabase_connected ? '✅' : '❌'}\n` +
+                       `Бакет: ${response.bucket_exists ? '✅' : '❌'}\n` +
+                       `Файлов: ${response.files_count}`;
+        
+        console.log(`📨 Отправка ответа: ${message}`);
+        await bot.sendMessage(chatId, message);
         
     } catch (error) {
-        await bot.sendMessage(chatId, 
-            `❌ Ошибка подключения к Supabase:\n\n` +
-            `Ошибка: ${error.message}\n` +
-            `Статус: ${error.response?.status}\n` +
-            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/supabase-test`
-        );
+        console.error(`❌ Ошибка в test_supabase:`, error);
+        
+        const errorMessage = `❌ Ошибка подключения к Supabase:\n\n` +
+                            `Ошибка: ${error.message}\n` +
+                            `Статус: ${error.status || 'unknown'}\n` +
+                            `URL: https://armonie.onrender.com/api/supabase-test`;
+        
+        await bot.sendMessage(chatId, errorMessage);
     }
 });
 
@@ -2413,30 +2387,37 @@ bot.onText(/\/test_upload/, async (msg) => {
     }
     
     try {
+        console.log(`🧪 Запуск test_upload для chatId: ${chatId}`);
+        
         const testImageUrl = 'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Upload';
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/test-upload';
+        const apiUrl = 'https://armonie.onrender.com/api/test-upload';
         
         const response = await makeStatamicRequest('POST', apiUrl, {
             image_url: testImageUrl
         });
         
         if (response.success) {
-            await bot.sendMessage(chatId, 
-                `✅ Тест загрузки успешен!\n\n` +
-                `URL: ${response.url}\n` +
-                `File: ${response.file_name}`
-            );
+            const message = `✅ Тест загрузки успешен!\n\n` +
+                           `URL: ${response.url}\n` +
+                           `File: ${response.file_name}`;
+            
+            console.log(`📨 Отправка ответа: ${message}`);
+            await bot.sendMessage(chatId, message);
         } else {
-            await bot.sendMessage(chatId, `❌ Ошибка загрузки: ${response.message}`);
+            const message = `❌ Ошибка загрузки: ${response.message}`;
+            console.log(`📨 Отправка ответа: ${message}`);
+            await bot.sendMessage(chatId, message);
         }
         
     } catch (error) {
-        await bot.sendMessage(chatId, 
-            `❌ Ошибка теста загрузки:\n\n` +
-            `Ошибка: ${error.message}\n` +
-            `Статус: ${error.response?.status}\n` +
-            `Детали: ${error.response?.data?.message || 'Нет дополнительной информации'}`
-        );
+        console.error(`❌ Ошибка в test_upload:`, error);
+        
+        const errorMessage = `❌ Ошибка теста загрузки:\n\n` +
+                            `Ошибка: ${error.message}\n` +
+                            `Статус: ${error.status || 'unknown'}\n` +
+                            `Детали: ${error.data?.message || 'Нет дополнительной информации'}`;
+        
+        await bot.sendMessage(chatId, errorMessage);
     }
 });
 bot.onText(/\/test_main_endpoint/, async (msg) => {
@@ -2476,6 +2457,43 @@ bot.onText(/\/test_main_endpoint/, async (msg) => {
     }
 });
 
+bot.onText(/\/ping/, async (msg) => {
+    const chatId = msg.chat.id;
+    const startTime = Date.now();
+    
+    try {
+        await bot.sendMessage(chatId, '🏓 Pong! Бот работает...');
+        const endTime = Date.now();
+        await bot.sendMessage(chatId, `⏱ Время ответа: ${endTime - startTime}ms`);
+    } catch (error) {
+        console.error('❌ Ошибка в ping команде:', error);
+    }
+});
+bot.onText(/\/bot_status/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const statusMessage = `🤖 Статус бота:\n\n` +
+                            `👑 Админы: ${ADMIN_CHAT_IDS.join(', ')}\n` +
+                            `🏠 Группы объектов: ${PROPERTY_GROUPS.length}\n` +
+                            `📰 Группы новостей: ${NEWS_GROUPS.length}\n` +
+                            `🌐 Все группы: ${ALL_GROUPS.length}\n` +
+                            `💾 Состояния пользователей: ${userStates.size}\n` +
+                            `⏳ Ожидают подтверждения: ${pendingConfirmations.size}\n` +
+                            `🔄 Polling: активен\n` +
+                            `📡 API Token: ${API_TOKEN ? '✅' : '❌'}\n` +
+                            `🤵 Bot Token: ${TELEGRAM_TOKEN ? '✅' : '❌'}`;
+        
+        await bot.sendMessage(chatId, statusMessage);
+    } catch (error) {
+        console.error('❌ Ошибка в bot_status:', error);
+        await bot.sendMessage(chatId, `❌ Ошибка получения статуса: ${error.message}`);
+    }
+});
 // ==================== ЗАПУСК СЕРВЕРА ====================
 
 app.use(express.json());
