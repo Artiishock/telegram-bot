@@ -28,7 +28,10 @@ const ALL_GROUPS = process.env.TELEGRAM_ALL_GROUPS
 const PORT = process.env.PORT || 3000;
 
 // Инициализация бота
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const bot = new TelegramBot(TELEGRAM_TOKEN, { 
+    polling: true,
+     filepath: false 
+ });
 const app = express();
 
 // Временное хранилище данных пользователей
@@ -2376,8 +2379,8 @@ bot.onText(/\/test_api/, async (msg) => {
     }
     
     try {
-        // Используем правильный URL - убираем /telegram-property из пути
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/debug-config';
+        // Правильный URL для debug-config
+        const apiUrl = 'https://armonie.onrender.com/api/debug-config';
         const response = await makeStatamicRequest('GET', apiUrl);
         
         await bot.sendMessage(chatId, 
@@ -2393,7 +2396,7 @@ bot.onText(/\/test_api/, async (msg) => {
             `❌ Ошибка подключения к API:\n\n` +
             `Ошибка: ${error.message}\n` +
             `Статус: ${error.response?.status}\n` +
-            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/debug-config`
+            `URL: https://armonie.onrender.com/api/debug-config`
         );
     }
 });
@@ -2407,8 +2410,8 @@ bot.onText(/\/test_supabase/, async (msg) => {
     }
     
     try {
-        // Используем правильный URL
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/supabase-test';
+        // Правильный URL для supabase-test
+        const apiUrl = 'https://armonie.onrender.com/api/supabase-test';
         const response = await makeStatamicRequest('GET', apiUrl);
         
         await bot.sendMessage(chatId, 
@@ -2424,7 +2427,7 @@ bot.onText(/\/test_supabase/, async (msg) => {
             `❌ Ошибка подключения к Supabase:\n\n` +
             `Ошибка: ${error.message}\n` +
             `Статус: ${error.response?.status}\n` +
-            `URL: ${STATAMIC_API_URL.replace('/telegram-property', '')}/supabase-test`
+            `URL: https://armonie.onrender.com/api/supabase-test`
         );
     }
 });
@@ -2439,7 +2442,7 @@ bot.onText(/\/test_upload/, async (msg) => {
     
     try {
         const testImageUrl = 'https://via.placeholder.com/600x400/0088cc/ffffff?text=Test+Upload';
-        const apiUrl = STATAMIC_API_URL.replace('/telegram-property', '') + '/test-upload';
+        const apiUrl = 'https://armonie.onrender.com/api/test-upload';
         
         const response = await makeStatamicRequest('POST', apiUrl, {
             image_url: testImageUrl
@@ -2462,6 +2465,42 @@ bot.onText(/\/test_upload/, async (msg) => {
             `Статус: ${error.response?.status}\n` +
             `Детали: ${error.response?.data?.message || 'Нет дополнительной информации'}`
         );
+    }
+});
+bot.onText(/\/test_main_endpoint/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    if (!isAdmin(chatId)) {
+        return sendAccessDenied(chatId);
+    }
+    
+    try {
+        const apiUrl = 'https://armonie.onrender.com/api/telegram-property';
+        
+        // Простой GET запрос для проверки доступности
+        const response = await makeStatamicRequest('GET', apiUrl);
+        
+        await bot.sendMessage(chatId, 
+            `✅ Основной endpoint доступен!\n\n` +
+            `Статус: ${response.status || 'unknown'}\n` +
+            `Сообщение: ${response.message || 'Endpoint работает'}`
+        );
+        
+    } catch (error) {
+        // GET может не поддерживаться, проверяем по статусу ошибки
+        if (error.response?.status === 405) {
+            // Method Not Allowed - это нормально, значит endpoint существует
+            await bot.sendMessage(chatId, 
+                `✅ Основной endpoint доступен! (возвращает 405 - метод не разрешен, что ожидаемо для POST endpoint'а)`
+            );
+        } else {
+            await bot.sendMessage(chatId, 
+                `❌ Ошибка основного endpoint'а:\n\n` +
+                `Ошибка: ${error.message}\n` +
+                `Статус: ${error.response?.status}\n` +
+                `URL: https://armonie.onrender.com/api/telegram-property`
+            );
+        }
     }
 });
 
