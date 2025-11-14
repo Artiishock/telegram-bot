@@ -342,189 +342,99 @@ async function sendPhotoToGroups(groupIds, imageUrl, caption) {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 }
-async function downloadImageWithRetry(url, maxRetries = 3) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const buffer = await downloadImageBuffer(url);
-            return buffer;
-        } catch (error) {
-            console.warn(`Attempt ${attempt} failed for ${url}:`, error.message);
-            if (attempt === maxRetries) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        }
-    }
-}
-async function sendMultiplePhotos(groupIds, imageUrls, caption) {
-    if (!groupIds || groupIds.length === 0 || !imageUrls || imageUrls.length === 0) {
-        console.log('❌ Нет групп или фото для отправки');
+
+// Функция для отправки медиагруппы (несколько фото в одном сообщении)
+async function sendMediaGroupToGroups(groupIds, imageUrls, caption) {
+    if (!groupIds || groupIds.length === 0) {
+        console.log('❌ Нет групп для отправки медиагруппы');
         return;
     }
-
-    console.log(`📤 Отправка ${imageUrls.length} фото в ${groupIds.length} групп`);
-
+    
+    console.log(`📤 Отправка медиагруппы из ${imageUrls.length} фото в ${groupIds.length} групп`);
+    
     for (const groupId of groupIds) {
         try {
-            // Если фото 1-2 - отправляем как отдельные фото с подписью у первого
-            if (imageUrls.length <= 2) {
-                for (let i = 0; i < imageUrls.length; i++) {
-                    await sendSinglePhotoToGroup(groupId, imageUrls[i], i === 0 ? caption : '');
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-            }
-            // Если фото 3-10 - отправляем медиагруппой
-            else if (imageUrls.length <= 10) {
-                await sendMediaGroupToGroups([groupId], imageUrls, caption);
-            }
-            // Если фото больше 10 - разбиваем на части
-            else {
-                console.log(`🔄 Слишком много фото (${imageUrls.length}), разбиваю на части...`);
+            // Создаем массив для медиагруппы (максимум 10 фото)
+            const mediaGroup = [];
+            const maxPhotos = 10; // Лимит Telegram
+            
+            // Берем первые 10 фото (Telegram ограничивает медиагруппу 10 элементами)
+            const photosToSend = imageUrls.slice(0, maxPhotos);
+            
+            console.log(`🖼️ Формирование медиагруппы из ${photosToSend.length} фото для группы ${groupId}`);
+            
+            // Создаем медиагруппу
+            for (let i = 0; i < photosToSend.length; i++) {
+                const imageUrl = photosToSend[i];
                 
-                // Разбиваем на группы по 10 фото
-                const chunks = [];
-                for (let i = 0; i < imageUrls.length; i += 10) {
-                    chunks.push(imageUrls.slice(i, i + 10));
+                try {
+                    // Скачиваем изображение
+                    const imageBuffer = await downloadImageBuffer(imageUrl);
+                    
+                    // Добавляем в медиагруппу
+                    mediaGroup.push({
+                        type: 'photo',
+                        media: imageBuffer,
+                        // Подпись только у первого фото (будет отображаться для всего сообщения)
+                        caption: i === 0 ? caption.substring(0, 1024) : undefined
+                    });
+                    
+                    console.log(`✅ Фото ${i + 1} добавлено в медиагруппу`);
+                    
+                } catch (downloadError) {
+                    console.error(`❌ Ошибка загрузки фото ${i + 1}:`, downloadError.message);
+                    // Пропускаем это фото и продолжаем
                 }
                 
-                // Отправляем первую группу с подписью
-                if (chunks[0].length > 0) {
-                    await sendMediaGroupToGroups([groupId], chunks[0], caption);
-                }
-                
-                // Отправляем остальные группы без подписи
-                for (let i = 1; i < chunks.length; i++) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    await sendMediaGroupToGroups([groupId], chunks[i], '');
-                }
+                // Небольшая задержка между загрузками
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
             
-            console.log(`✅ Все ${imageUrls.length} фото отправлены в группу ${groupId}`);
+            if (mediaGroup.length === 0) {
+                throw new Error('Не удалось загрузить ни одного изображения для медиагруппы');
+            }
+            
+            // Отправляем медиагруппу
+            await bot.sendMediaGroup(groupId, mediaGroup);
+            console.log(`✅ Медиагруппа из ${mediaGroup.length} фото отправлена в группу ${groupId}`);
+            
+            // Если было больше 10 фото, отправляем остальные как отдельные фото
+            if (imageUrls.length > maxPhotos) {
+                const remainingPhotos = imageUrls.slice(maxPhotos);
+                console.log(`📨 Отправка оставшихся ${remainingPhotos.length} фото отдельно...`);
+                
+                for (let i = 0; i < remainingPhotos.length; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    try {
+                        await sendSinglePhotoToGroup(groupId, remainingPhotos[i], '');
+                        console.log(`✅ Дополнительное фото ${maxPhotos + i + 1} отправлено`);
+                    } catch (photoError) {
+                        console.error(`❌ Ошибка отправки дополнительного фото ${maxPhotos + i + 1}:`, photoError.message);
+                    }
+                }
+            }
             
         } catch (error) {
-            console.error(`❌ Ошибка отправки фото в группу ${groupId}:`, error.message);
+            console.error(`❌ Ошибка отправки медиагруппы в группу ${groupId}:`, error.message);
             
-            // Fallback: пытаемся отправить по одному
+            // Fallback: пытаемся отправить по одному фото
             try {
-                console.log(`🔄 Пробую отправить фото по одному в группу ${groupId}...`);
+                console.log(`🔄 Попытка отправить фото по одному в группу ${groupId}...`);
                 await sendAllPhotosSeparately(groupId, imageUrls, caption);
             } catch (fallbackError) {
-                console.error(`❌ Fallback не сработал для группы ${groupId}:`, fallbackError.message);
+                console.error(`❌ Fallback также не сработал для группы ${groupId}:`, fallbackError.message);
                 
                 // Последняя попытка: отправляем только текст
                 try {
                     await sendToGroups([groupId], caption);
                 } catch (textError) {
-                    console.error(`❌ Не удалось отправить даже текст:`, textError.message);
+                    console.error(`❌ Не удалось отправить даже текст в группу ${groupId}:`, textError.message);
                 }
             }
         }
         
         // Задержка между группами
         await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-}
-async function downloadImageBuffer(url) {
-    return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? require('https') : require('http');
-        
-        const request = protocol.get(url, (response) => {
-            if (response.statusCode !== 200) {
-                reject(new Error(`HTTP ${response.statusCode}`));
-                return;
-            }
-
-            const chunks = [];
-            response.on('data', (chunk) => chunks.push(chunk));
-            response.on('end', () => {
-                const buffer = Buffer.concat(chunks);
-                
-                // Проверяем минимальный размер (не пустой файл)
-                if (buffer.length < 100) {
-                    reject(new Error('File too small or empty'));
-                    return;
-                }
-                
-                resolve(buffer);
-            });
-        });
-
-        request.on('error', reject);
-        request.setTimeout(15000, () => {
-            request.destroy();
-            reject(new Error('Download timeout'));
-        });
-    });
-}
-async function sendPhotosIndividually(groupId, imageUrls, caption) {
-    if (!imageUrls || imageUrls.length === 0) return;
-    
-    // Первое фото с подписью
-    if (imageUrls[0]) {
-        await sendPhotoToGroups([groupId], imageUrls[0], caption);
-        await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
-    // Остальные фото без подписи
-    for (let i = 1; i < imageUrls.length; i++) {
-        try {
-            await sendPhotoToGroups([groupId], imageUrls[i], '');
-            await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (error) {
-            console.error(`Failed to send photo ${i} to ${groupId}:`, error.message);
-            // Продолжаем отправлять остальные фото
-        }
-    }
-}
-// Функция для отправки медиагруппы (несколько фото в одном сообщении)
-async function sendMediaGroupToGroups(groupIds, imageUrls, caption) {
-    if (!groupIds || groupIds.length === 0) return;
-    
-    for (const groupId of groupIds) {
-        try {
-            // Проверяем лимит Telegram
-            if (imageUrls.length > 10) {
-                console.log(`⚠️ Too many photos (${imageUrls.length}), splitting...`);
-                await sendMultiplePhotos(groupId, imageUrls, caption);
-                continue;
-            }
-
-            const mediaGroup = [];
-            
-            for (let i = 0; i < imageUrls.length; i++) {
-                try {
-                    const buffer = await downloadImageWithRetry(imageUrls[i]);
-                    mediaGroup.push({
-                        type: 'photo',
-                        media: buffer,
-                        caption: i === 0 ? caption?.substring(0, 1024) : undefined
-                    });
-                } catch (imgError) {
-                    console.error(`Failed to download image ${i}:`, imgError);
-                    // Пропускаем проблемное фото, но продолжаем
-                }
-            }
-
-            if (mediaGroup.length > 0) {
-                await bot.sendMediaGroup(groupId, mediaGroup);
-                console.log(`✅ Media group sent to ${groupId} (${mediaGroup.length} photos)`);
-            } else {
-                // Если ни одно фото не загрузилось, отправляем текст
-                await sendToGroups([groupId], caption || 'Фото объекта');
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-        } catch (error) {
-            console.error(`❌ Error sending media group to ${groupId}:`, error.message);
-            
-            // Fallback: отправляем фото по одному
-            try {
-                console.log('🔄 Trying fallback: sending photos individually...');
-                await sendPhotosIndividually(groupId, imageUrls, caption);
-            } catch (fallbackError) {
-                console.error(`❌ Fallback also failed for ${groupId}:`, fallbackError.message);
-                await sendToGroups([groupId], caption || 'Не удалось отправить фото');
-            }
-        }
     }
 }
 
@@ -570,72 +480,56 @@ function downloadImageBuffer(url) {
 
 // Функция для отправки всех фото по отдельности (fallback)
 async function sendAllPhotosSeparately(groupId, imageUrls, caption) {
-    if (!imageUrls || imageUrls.length === 0) {
+    if (imageUrls.length === 0) {
         await sendToGroups([groupId], caption);
         return;
     }
     
-    console.log(`📨 Отправка ${imageUrls.length} фото по отдельности в группу ${groupId}`);
-    
     // Первое фото с подписью
-    if (imageUrls[0]) {
-        await sendSinglePhotoToGroup(groupId, imageUrls[0], caption);
-    }
+    await sendSinglePhotoToGroup(groupId, imageUrls[0], caption);
     
     // Остальные фото без подписи
     for (let i = 1; i < imageUrls.length; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        try {
-            await sendSinglePhotoToGroup(groupId, imageUrls[i], '');
-            console.log(`✅ Фото ${i + 1}/${imageUrls.length} отправлено`);
-        } catch (error) {
-            console.error(`❌ Ошибка отправки фото ${i + 1}:`, error.message);
-        }
+        await sendSinglePhotoToGroup(groupId, imageUrls[i], '');
     }
 }
 
 async function executeAddProperty(chatId, propertyData) {
     try {
-        console.log('🏠 Данные объекта для отправки в Statamic:', propertyData);
-        console.log('📸 Images array:', propertyData.images);
-        console.log('🖼️ Assets array:', propertyData.assets_array);
+        console.log('🏠 Подготовка данных для Statamic:', propertyData);
         
-        // Формируем данные для API
+        // Преобразуем данные в правильный формат
         const apiData = {
-            title: propertyData.title,
-            type: propertyData.type,
+            title: propertyData.title || '',
+            type: propertyData.type || 'rent',
             price: parseInt(propertyData.price) || 0,
-            address: propertyData.address,
-            district: propertyData.district,
+            address: propertyData.address || '',
+            district: propertyData.district || 'Constanta',
             floor: parseInt(propertyData.floor) || 0,
-            rooms: parseInt(propertyData.rooms) || 0,
+            rooms: parseInt(propertyData.rooms) || 1,
             has_lift: Boolean(propertyData.has_lift),
             has_balcony: Boolean(propertyData.has_balcony),
             bathroom: parseInt(propertyData.bathroom) || 1,
-            type_home: propertyData.type_home,
-            nearbu: propertyData.nearbu,
-            date_use: propertyData.date_use,
+            type_home: propertyData.type_home || 'квартира',
+            nearbu: propertyData.nearbu || '',
+            date_use: propertyData.date_use || '',
             apartment_area: parseInt(propertyData.apartment_area) || 0,
-            description: propertyData.description,
+            description: propertyData.description || '',
             images: propertyData.images || [],
             assets_array: propertyData.assets_array || []
         };
 
-        console.log('📤 Отправка данных на API:', {
-            title: apiData.title,
+        console.log('📤 Отправка данных в Statamic:', {
+            url: STATAMIC_API_URL,
+            data: apiData,
             images_count: apiData.images.length,
-            assets_count: apiData.assets_array.length,
-            images_sample: apiData.images.slice(0, 2) // первые 2 URL для проверки
+            assets_count: apiData.assets_array.length
         });
-        
+
         const response = await makeStatamicRequest('POST', STATAMIC_API_URL, apiData);
         
-        // ДОБАВЬТЕ ЭТОТ ЛОГ
-        console.log('📨 Ответ от Statamic:', {
-            success: response.success,
-            message: response.message,
-            entry_id: response.entry_id || 'не указан'
-        });
+        console.log('📨 Ответ от Statamic:', response);
         
         if (response.success) {
             await bot.sendMessage(chatId, '✅ Объект недвижимости успешно добавлен!');
@@ -644,28 +538,42 @@ async function executeAddProperty(chatId, propertyData) {
             const message = formatPropertyMessage(propertyData);
             const allGroups = [...new Set([...PROPERTY_GROUPS, ...ALL_GROUPS])];
             
-     const allImages = [
-    ...(propertyData.images || []),
-    ...(propertyData.assets_array || [])
-];
-
-if (allImages.length > 0) {
-    console.log(`🖼️ Отправка ${allImages.length} фото в группы`);
-    await sendMultiplePhotos(allGroups, allImages, message);
-} else {
-    await sendToGroups(allGroups, message);
-}
+            if (propertyData.images && propertyData.images.length > 0) {
+                await sendPhotoToGroups(allGroups, propertyData.images[0], message);
+            } else {
+                await sendToGroups(allGroups, message);
+            }
             
             console.log(`✅ Объект добавлен и отправлен в ${allGroups.length} групп`);
-       } else {
-            await bot.sendMessage(chatId, '❌ Произошла ошибка при добавлении объекта: ' + response.message);
+        } else {
+            console.error('❌ Ошибка от Statamic:', response);
+            await bot.sendMessage(chatId, '❌ Ошибка при добавлении объекта: ' + (response.message || 'Неизвестная ошибка'));
         }
     } catch (error) {
         console.error('❌ Ошибка при добавлении объекта:', error);
-        console.error('❌ Детали ошибки:', error.response?.data || error.message);
-        await bot.sendMessage(chatId, '❌ Ошибка при добавлении объекта. Проверьте логи для подробностей.');
+        
+        // Детальная информация об ошибке
+        let errorMessage = 'Ошибка при добавлении объекта. ';
+        
+        if (error.response) {
+            // Ошибка от сервера
+            errorMessage += `Сервер ответил: ${error.response.status} - ${error.response.statusText}`;
+            if (error.response.data) {
+                console.error('📋 Тело ошибки:', error.response.data);
+                errorMessage += `\nДетали: ${JSON.stringify(error.response.data)}`;
+            }
+        } else if (error.request) {
+            // Ошибка сети
+            errorMessage += 'Нет ответа от сервера. Проверьте подключение к интернету.';
+        } else {
+            // Другая ошибка
+            errorMessage += error.message;
+        }
+        
+        await bot.sendMessage(chatId, errorMessage);
     }
 }
+
 async function makeStatamicRequest(method, url, data = null) {
     try {
         const config = {
@@ -674,7 +582,12 @@ async function makeStatamicRequest(method, url, data = null) {
             headers: {
                 'Authorization': `Bearer ${API_TOKEN}`,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'User-Agent': 'TelegramBot/1.0'
+            },
+            timeout: 30000, // 30 секунд
+            validateStatus: function (status) {
+                return status >= 200 && status < 500; // Разрешаем статусы 200-499
             }
         };
 
@@ -685,16 +598,26 @@ async function makeStatamicRequest(method, url, data = null) {
         console.log('📡 Отправка запроса к Statamic:', {
             url: url,
             method: method,
-            data: data ? Object.keys(data) : 'no data'
+            data_size: JSON.stringify(data).length,
+            has_images: data.images ? data.images.length : 0,
+            has_assets: data.assets_array ? data.assets_array.length : 0
         });
 
         const response = await axios(config);
-        console.log('✅ Успешный ответ от Statamic:', response.data);
+        
+        console.log('📨 Ответ от сервера:', {
+            status: response.status,
+            statusText: response.statusText,
+            data: response.data
+        });
+
         return response.data;
     } catch (error) {
         console.error('❌ Ошибка запроса к Statamic:', {
             message: error.message,
+            code: error.code,
             status: error.response?.status,
+            statusText: error.response?.statusText,
             data: error.response?.data,
             url: url
         });
@@ -2000,28 +1923,28 @@ function formatPropertyMessage(propertyData) {
         message += `\n📋 Описание: ${shortDesc}\n`;
     }
     
-        message += `📩Контакты:\n`;
-    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare \n`;
-    message += `📞 +380682656442 - Сергей\n`;
+        message += `📩Контакты:`;
+    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare `;
+    message += `📞 +380682656442 - Сергей`;
     message += `🌐Наш сайт c квартирами 
                 для аренды, покупки, юридической консультации - 
                 жми на ссылку: 
-                https://armonie-imobiliare.ro \n`;
-    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:\n`
-    message += `✅Instagram:\n
-                https://instagram.com/apartment_romania_mamaia\n`;
-    message += `✅Facebook:\n
-                https://www.facebook.com/housingromania\n`
-    message += `✅Tik Tok:\n
-                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1\n`;
-    message += `✅Youtube:\n
-                https://www.youtube.com/@Armonie-Romania\n`;
-    message += `НАШИ КАНАЛЫ:\n`
-    message += `✅Продажа: https://t.me/harmony_invest\n`;
-    message += `✅Юридическая консультация:\n`
-    message += `Гражданство ЕС: https://t.me/armonie_consulting\n`;
-    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting\n`;
-    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting\n`;
+                https://armonie-imobiliare.ro `;
+    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:`
+    message += `✅Instagram:
+                https://instagram.com/apartment_romania_mamaia`;
+    message += `✅Facebook:
+                https://www.facebook.com/housingromania`
+    message += `✅Tik Tok:
+                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1`;
+    message += `✅Youtube:
+                https://www.youtube.com/@Armonie-Romania`;
+    message += `НАШИ КАНАЛЫ:`
+    message += `✅Продажа: https://t.me/harmony_invest`;
+    message += `✅Юридическая консультация:`
+    message += `Гражданство ЕС: https://t.me/armonie_consulting`;
+    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting`;
+    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting`;
     
     return message;
 }
@@ -2037,29 +1960,28 @@ function formatNewsMessage(newsData) {
         : newsData.blog_text;
     
     message += `📖 ${shortText}\n\n`;
-        message += `📩Контакты:\n`;
-    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare \n`;
-    message += `📞 +380682656442 - Сергей\n`;
+        message += `📩Контакты:`;
+    message += `📱 Консультация с агентами : @Armonie_agentie_imobiliare `;
+    message += `📞 +380682656442 - Сергей`;
     message += `🌐Наш сайт c квартирами 
                 для аренды, покупки, юридической консультации - 
                 жми на ссылку: 
-                https://armonie-imobiliare.ro \n`;
-    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:\n`
-    message += `✅Instagram:\n
-                https://instagram.com/apartment_romania_mamaia\n`;
-    message += `✅Facebook:\n
-                https://www.facebook.com/housingromania\n`
-    message += `✅Tik Tok:\n
-                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1\n`;
-    message += `✅Youtube:\n
-                https://www.youtube.com/@Armonie-Romania\n`;
-    message += `НАШИ КАНАЛЫ:\n`
-    message += `✅Продажа: https://t.me/harmony_invest\n`;
-    message += `✅Юридическая консультация:\n`
-    message += `Гражданство ЕС: https://t.me/armonie_consulting\n`;
-    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting\n`;
-    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting\n`;
-    
+                https://armonie-imobiliare.ro `;
+    message += `НАШИ СОЦИАЛЬНЫЕ СЕТИ:`
+    message += `✅Instagram:
+                https://instagram.com/apartment_romania_mamaia`;
+    message += `✅Facebook:
+                https://www.facebook.com/housingromania`
+    message += `✅Tik Tok:
+                https://www.tiktok.com/@_armonie_imobiliare_?_t=8riSC0AuV30&_r=1`;
+    message += `✅Youtube:
+                https://www.youtube.com/@Armonie-Romania`;
+    message += `НАШИ КАНАЛЫ:`
+    message += `✅Продажа: https://t.me/harmony_invest`;
+    message += `✅Юридическая консультация:`
+    message += `Гражданство ЕС: https://t.me/armonie_consulting`;
+    message += `Продление паспорта, (резерв +): https://t.me/armonie_consulting`;
+    message += `Открытие фирмы в ЕС, ВНЖ, покупка земли в ЕС: https://t.me/armonie_consulting`;
     
     return message;
 }
@@ -2336,72 +2258,6 @@ function splitLongMessage(message, maxLength = 4096) {
     
     return parts;
 }
-
-bot.onText(/\/test_supabase/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    if (!isAdmin(chatId)) {
-        return sendAccessDenied(chatId);
-    }
-    
-    try {
-        const testData = {
-            title: 'Тест Supabase',
-            type: 'rent',
-            price: '1000',
-            address: 'Тестовый адрес',
-            district: 'Constanta',
-            floor: '2',
-            rooms: '3',
-            has_lift: true,
-            has_balcony: true,
-            bathroom: '2',
-            type_home: 'квартира',
-            apartment_area: '75'
-        };
-        
-        const response = await makeStatamicRequest('POST', STATAMIC_API_URL, testData);
-        
-        await bot.sendMessage(chatId, 
-            `✅ Supabase тест успешен!\n\n` +
-            `ID: ${response.id}\n` +
-            `Изображения: ${response.images_uploaded}\n` +
-            `Ассеты: ${response.assets_uploaded}`
-        );
-        
-    } catch (error) {
-        await bot.sendMessage(chatId, 
-            `❌ Ошибка Supabase:\n\n` +
-            `Ошибка: ${error.message}\n` +
-            `Статус: ${error.response?.status}`
-        );
-    }
-});
-
-// Проверка хранилища
-bot.onText(/\/check_storage/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    if (!isAdmin(chatId)) {
-        return sendAccessDenied(chatId);
-    }
-    
-    try {
-        const response = await makeStatamicRequest('GET', `${STATAMIC_API_URL}/storage-info`);
-        
-        await bot.sendMessage(chatId, 
-            `📦 Информация о хранилище:\n\n` +
-            `Тип: ${response.storage_type}\n` +
-            `Бакет: ${response.bucket}\n` +
-            `Файлов: ${response.file_count}`
-        );
-        
-    } catch (error) {
-        await bot.sendMessage(chatId, '❌ Не удалось получить информацию о хранилище');
-    }
-});
-
-
 
 // ==================== ЗАПУСК СЕРВЕРА ====================
 
